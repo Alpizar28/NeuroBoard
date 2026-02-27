@@ -1,41 +1,95 @@
 # Parsing and Business Rules
 
 ## 1. Task Classification Rules
-Classification must happen per task.
+Classification is deterministic and happens per task.
 
-**Category Mapping:**
-- `COURSE_NAME:` → Proyectos (e.g., SUPERIOR, ELEMENTOS, CA)
-- `PROJECT_NAME:` → Jokem (e.g., JOKEM OS, LA FENICE, GYM TAMARINDO)
-- `JP:` → Personales
-- *No prefix* → Domésticas
+### Active Mapping
+- `SUPERIOR:`, `ELEMENTOS:`, `CA:` -> `Proyectos`
+- `JOKEM OS:`, `LA FENICE:`, `GYM TAMARINDO:` -> `Jokem`
+- `JP:` -> `Personales`
+- no prefix -> `Domesticas`
+- unknown prefix -> fallback to `Domesticas` with lower confidence
 
-**Confidence Strategy:**
-Even if classification seems correct, ALWAYS show preview and ALWAYS require user confirmation. No auto-creation without confirmation.
+### Important Note
+Even if classification is high-confidence, the system still builds a preview first. Nothing should be created before confirmation.
 
-## 2. Subtask Parsing Rules
-- Line starts with `•` and is indented below previous main task.
-- Bullet lines belong to the nearest previous main task.
-- No multi-level nesting in v1.
-- If structure is ambiguous → mark low confidence.
+## 2. Subtask Rules
+- A line starting with `•` is treated as a subtask.
+- A subtask attaches to the nearest previous main task.
+- Orphan subtask lines are ignored.
+- Current implementation is single-level only.
 
-## 3. Natural Date Interpretation (Costa Rica timezone)
-- **Relative:** hoy, mañana, pasado mañana, la otra semana
-- **Weekdays:** lunes, martes, viernes, lun, vie
-- **Numeric:** 15/03, 15-03
+## 3. Date Parsing Rules
+The current parser supports common Spanish inputs, using Costa Rica timezone logic as the intended business context.
 
-*If ambiguous:* Highlight in preview and allow user correction.
+### Supported Inputs
+- Relative:
+  - `hoy`
+  - `mañana`
+  - `pasado mañana`
+  - `la otra semana`
+- Weekdays:
+  - `lunes`, `martes`, `viernes`, etc.
+  - short forms like `lun`, `vie`
+- Numeric:
+  - `15/03`
+  - `15-03`
 
-## 4. Duplicate Detection
-- Preprocess image -> Generate SHA256 hash -> Store hash in DB.
-- If hash exists -> Abort processing and notify user. (Optional: manual override later).
+### Current Behavior
+- Weekdays resolve to the next occurrence, not the same day.
+- Numeric dates that already passed in the current year roll to next year.
+- Invalid dates remain unresolved and generate warnings.
 
-## 5. Low Confidence Handling
-If Vision API returns poor structure, missing hierarchy, or low confidence score:
-- Reject structured creation.
-- Ask user to retake photo.
-- Do not create partial tasks.
+## 4. Vision API Handling
+The backend first tries the Vision API for photo-based extraction.
 
-## 6. Preview UX Requirements
-Preview must include tasks grouped by target list, tasks with interpreted date, subtasks visually indented, and an editable structure.
-Buttons: `Confirm`, `Edit`, `Cancel`.
-No task is created before confirmation.
+### Current Rules
+- The response must match a strict JSON contract.
+- The payload is validated with Pydantic before use.
+- If the payload is malformed, empty, or too low-confidence, the backend falls back to local text parsing.
+- Allowed `category_hint` values from vision are:
+  - `Proyectos`
+  - `Jokem`
+  - `Personales`
+  - `Domesticas`
+- Invalid `category_hint` values are ignored and replaced by local deterministic classification.
+
+## 5. Duplicate Detection
+- The backend preprocesses the image first.
+- It calculates SHA256 from the processed image bytes.
+- If the hash already exists in the database, the request is treated as duplicate and no new preview is created.
+
+## 6. Preview Rules
+The preview is the center of the workflow.
+
+### Current Behavior
+- Every valid parsing path ends in a preview.
+- A preview is stored in SQLite before confirmation.
+- A preview has a persistent `preview_id`.
+- A preview can move through:
+  - `pending`
+  - `editing`
+  - `confirmed`
+  - `creation_failed`
+  - `completed`
+  - `cancelled`
+  - `expired`
+
+## 7. Edit Rules
+- If the user taps `Edit`, the preview moves to `editing`.
+- The user can submit:
+  - `/edit <preview_id>`
+  - followed by corrected task lines
+- The backend replaces the stored preview content in place.
+- The same `preview_id` is preserved.
+
+## 8. Confirmation and Creation Rules
+- `Confirm` creates tasks in Google Tasks.
+- Creation is idempotent per preview and per task index.
+- Repeating `Confirm` does not recreate tasks already created.
+- Subtasks are created as real child tasks in Google Tasks.
+
+## 9. Expiration Rule
+- Old previews are automatically marked `expired`.
+- Expiration is based on `PREVIEW_EXPIRATION_MINUTES`.
+- Expired previews should not be treated as active work items.
