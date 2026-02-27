@@ -6,9 +6,11 @@ from typing import Any
 import httpx
 from pydantic import ValidationError
 
+from app.core.config import settings
 from app.models.schemas import ParsedTask, VisionExtractionPayload
 from app.services.classification_service import classify_task
 from app.services.date_parser_service import parse_due_date
+from app.utils.retry import async_retry
 
 
 ALLOWED_LIST_NAMES = {"Proyectos", "Jokem", "Personales", "Domesticas"}
@@ -25,13 +27,20 @@ class VisionService:
         if not self.endpoint:
             raise RuntimeError("VISION_API_URL is not configured.")
 
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            response = await client.post(
-                self.endpoint,
-                files={"image": ("board.jpg", image_bytes, "image/jpeg")},
-            )
-            response.raise_for_status()
-            return response.json()
+        async def _request_extract() -> dict[str, Any]:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                response = await client.post(
+                    self.endpoint,
+                    files={"image": ("board.jpg", image_bytes, "image/jpeg")},
+                )
+                response.raise_for_status()
+                return response.json()
+
+        return await async_retry(
+            _request_extract,
+            max_attempts=settings.HTTP_RETRY_ATTEMPTS,
+            backoff_seconds=settings.HTTP_RETRY_BACKOFF_SECONDS,
+        )
 
 
 def build_vision_service(endpoint: str) -> VisionService:

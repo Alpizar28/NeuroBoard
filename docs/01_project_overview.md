@@ -31,6 +31,8 @@ The project is no longer just a plan. The current backend already includes:
 - Manual correction flow through `/edit <preview_id>`.
 - Google Tasks creation with idempotency.
 - Real subtask creation in Google Tasks using parent-child task relationships.
+- Retry logic with backoff for Telegram, Vision API, and Google Tasks requests.
+- Base Google OAuth refresh-token support.
 - Automatic preview expiration.
 - Admin endpoint to inspect previews.
 
@@ -38,10 +40,11 @@ The project is no longer just a plan. The current backend already includes:
 The project is currently in an **advanced backend MVP stage**.
 
 That means:
-- The core backend workflow is implemented and test-covered at the unit level.
+- The core backend workflow is implemented and covered by unit and HTTP tests.
 - The Telegram interaction model is already defined in code.
 - Google Tasks task creation is already connected.
 - The admin observability layer exists.
+- The current test suite passes inside Docker.
 
 What is still pending is mostly refinement and production hardening, not initial architecture.
 
@@ -60,7 +63,7 @@ What is still pending is mostly refinement and production hardening, not initial
 
 ## 5. Immediate Next Focus
 The most relevant next steps are:
-- stronger production validation with full HTTP test execution
-- deployment and runtime verification in Docker
 - real production credential setup for Telegram, Vision API, and Google Tasks
-- optional hardening around retries, token refresh, and operational monitoring
+- end-to-end testing against real external services
+- production deployment and runtime observation on the target VPS
+- final OAuth token lifecycle hardening and secret management

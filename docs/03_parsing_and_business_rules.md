@@ -47,6 +47,7 @@ The backend first tries the Vision API for photo-based extraction.
 - The response must match a strict JSON contract.
 - The payload is validated with Pydantic before use.
 - If the payload is malformed, empty, or too low-confidence, the backend falls back to local text parsing.
+- Requests to the Vision API are retried with bounded backoff before failing.
 - Allowed `category_hint` values from vision are:
   - `Proyectos`
   - `Jokem`
@@ -88,8 +89,14 @@ The preview is the center of the workflow.
 - Creation is idempotent per preview and per task index.
 - Repeating `Confirm` does not recreate tasks already created.
 - Subtasks are created as real child tasks in Google Tasks.
+- Google Tasks requests now retry on transient failures.
+- If Google returns `401` and refresh credentials are configured, the backend can refresh the access token and retry.
 
 ## 9. Expiration Rule
 - Old previews are automatically marked `expired`.
 - Expiration is based on `PREVIEW_EXPIRATION_MINUTES`.
 - Expired previews should not be treated as active work items.
+
+## 10. Current Validation Status
+- The implemented parsing and workflow rules are covered by automated tests in `app/tests/`.
+- The full current test suite passes inside Docker.

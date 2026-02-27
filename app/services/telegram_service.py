@@ -7,6 +7,7 @@ import httpx
 
 from app.core.config import settings
 from app.models.schemas import ParsedTask
+from app.utils.retry import async_retry
 
 
 def format_preview_message(tasks: list[ParsedTask]) -> str:
@@ -180,13 +181,20 @@ class TelegramBotService:
         if not self.bot_token:
             raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured.")
 
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            response = await client.get(
-                f"{self.api_base}/getFile",
-                params={"file_id": file_id},
-            )
-            response.raise_for_status()
-            payload = response.json()
+        async def _request_file_path() -> dict[str, Any]:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                response = await client.get(
+                    f"{self.api_base}/getFile",
+                    params={"file_id": file_id},
+                )
+                response.raise_for_status()
+                return response.json()
+
+        payload = await async_retry(
+            _request_file_path,
+            max_attempts=settings.HTTP_RETRY_ATTEMPTS,
+            backoff_seconds=settings.HTTP_RETRY_BACKOFF_SECONDS,
+        )
 
         if not payload.get("ok") or "result" not in payload:
             raise RuntimeError("Telegram getFile returned an invalid payload.")
@@ -200,10 +208,17 @@ class TelegramBotService:
         if not self.bot_token:
             raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured.")
 
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            response = await client.get(f"{self.file_base}/{file_path}")
-            response.raise_for_status()
-            return response.content
+        async def _request_download() -> bytes:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                response = await client.get(f"{self.file_base}/{file_path}")
+                response.raise_for_status()
+                return response.content
+
+        return await async_retry(
+            _request_download,
+            max_attempts=settings.HTTP_RETRY_ATTEMPTS,
+            backoff_seconds=settings.HTTP_RETRY_BACKOFF_SECONDS,
+        )
 
     async def execute_api_call(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not self.bot_token:
@@ -214,13 +229,21 @@ class TelegramBotService:
             raise RuntimeError("Telegram API payload is missing method.")
 
         body = {key: value for key, value in payload.items() if key != "method"}
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            response = await client.post(
-                f"{self.api_base}/{method}",
-                json=body,
-            )
-            response.raise_for_status()
-            return response.json()
+
+        async def _request_dispatch() -> dict[str, Any]:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                response = await client.post(
+                    f"{self.api_base}/{method}",
+                    json=body,
+                )
+                response.raise_for_status()
+                return response.json()
+
+        return await async_retry(
+            _request_dispatch,
+            max_attempts=settings.HTTP_RETRY_ATTEMPTS,
+            backoff_seconds=settings.HTTP_RETRY_BACKOFF_SECONDS,
+        )
 
     async def execute_api_calls(self, payloads: list[dict[str, Any]]) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []

@@ -41,6 +41,17 @@ def test_admin_previews_requires_token() -> None:
     assert response.status_code == 403
 
 
+def test_health_endpoint_returns_runtime_metadata() -> None:
+    client = _build_test_client()
+    response = client.get("/health")
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert "preview_expiration_minutes" in payload
+
+
 def test_admin_previews_returns_created_preview() -> None:
     client = _build_test_client()
     original_admin_token = settings.ADMIN_API_TOKEN

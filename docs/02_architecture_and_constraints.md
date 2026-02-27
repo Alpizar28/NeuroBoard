@@ -22,6 +22,7 @@ Telegram Bot
 -> Google Tasks creation
 -> Admin inspection endpoint
 -> Structured logging in DB
+-> Retry / backoff wrapper for external HTTP calls
 
 ## 3. Current Application Structure
 - `app/main.py`
@@ -56,13 +57,15 @@ Telegram Bot
 - The system uses strict schema validation before trusting Vision API responses.
 - Idempotency is implemented with DB records, not in-memory only.
 - Telegram outbound actions are generated and can be executed immediately from the backend.
+- External HTTP calls now go through a shared retry helper with configurable attempts and backoff.
+- Google Tasks has a base refresh-token path for recovering an access token.
 
 ## 5. Current Operational Risks
 The following are known active risk areas, even though the base flow exists:
-- `pytest` is declared but not installed in the current shell environment, so the full test suite has not been executed here yet.
-- Google Tasks currently depends on a static access token and not a complete refresh-token flow.
+- Host shell may not have project dependencies installed, but the full suite has already been validated in Docker.
+- Google Tasks now has a base refresh-token flow, but not a full persisted production-grade token lifecycle yet.
 - Telegram and Google integrations still depend on production credentials being correctly configured.
-- Network failures are handled, but production-grade retry strategy can still be improved.
+- Network failures are handled with retries, but real-world tuning still depends on production traffic.
 
 ## 6. Current Maturity Assessment
 This is no longer a skeleton. It is a working backend MVP with the main flow implemented.
@@ -71,5 +74,6 @@ It is suitable for:
 - local integration tests
 - Docker validation
 - staging deployment
+- production preparation
 
 It still needs final production hardening before being treated as fully finished.

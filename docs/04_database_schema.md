@@ -62,7 +62,8 @@ Placeholder table for refresh-token persistence.
 
 Current note:
 - the table exists
-- the full refresh-token lifecycle is not fully implemented yet
+- the service layer now includes a base refresh-token flow
+- persistent encrypted token lifecycle is still not fully completed yet
 
 Columns:
 - `id`
@@ -115,3 +116,4 @@ The schema is sufficient for the current backend MVP, but likely next schema-lev
 - migrations instead of only `create_all`
 - indexes tuned after real traffic
 - stronger token storage strategy for Google OAuth refresh flow
+- eventual cleanup or reuse of the legacy `tasks_created` table

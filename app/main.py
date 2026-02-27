@@ -13,4 +13,9 @@ app.include_router(api_router, prefix="/api")
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "version": settings.VERSION}
+    return {
+        "status": "ok",
+        "version": settings.VERSION,
+        "database_url": settings.DATABASE_URL,
+        "preview_expiration_minutes": settings.PREVIEW_EXPIRATION_MINUTES,
+    }

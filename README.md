@@ -22,6 +22,8 @@ The main workflow is already implemented:
 - automatic preview expiration
 - admin preview inspection endpoint
 - optional execution of outbound Telegram Bot API calls from the backend
+- retries with backoff for Telegram, Vision, and Google integrations
+- base support for Google access-token refresh
 
 ## Core Flow
 1. Telegram sends a webhook.
@@ -58,12 +60,18 @@ The main workflow is already implemented:
 - `TELEGRAM_SECRET_TOKEN`
 - `VISION_API_URL`
 - `GOOGLE_TASKS_ACCESS_TOKEN`
+- `GOOGLE_TASKS_REFRESH_TOKEN`
+- `GOOGLE_OAUTH_CLIENT_ID`
+- `GOOGLE_OAUTH_CLIENT_SECRET`
+- `GOOGLE_OAUTH_TOKEN_URL`
 - `GOOGLE_TASKLIST_PROYECTOS_ID`
 - `GOOGLE_TASKLIST_JOKEM_ID`
 - `GOOGLE_TASKLIST_PERSONALES_ID`
 - `GOOGLE_TASKLIST_DOMESTICAS_ID`
 - `PREVIEW_EXPIRATION_MINUTES`
 - `ADMIN_API_TOKEN`
+- `HTTP_RETRY_ATTEMPTS`
+- `HTTP_RETRY_BACKOFF_SECONDS`
 - `DATABASE_URL`
 
 See [.env.example](/home/pablo/Jokem/NeuroBoard/.env.example) for the current template.
@@ -76,9 +84,14 @@ uvicorn app.main:app --reload
 ## Testing Note
 The repository includes unit tests and HTTP tests under `app/tests/`.
 
-In this shell session, syntax validation has been run successfully with:
+Validation already completed:
 ```bash
 python3 -m compileall app
+docker build -t neuroboard-test .
+docker run --rm neuroboard-test pytest app/tests
 ```
 
-The `pytest` suite is present in the repo, but it has not been executed here because `pytest` is not installed in the current environment.
+Current result:
+- `42 passed`
+
+The test suite is fully runnable in Docker even if the host shell does not have project dependencies installed.
