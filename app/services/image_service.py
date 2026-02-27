@@ -1,12 +1,12 @@
-import hashlib
 import io
 from PIL import Image, ImageEnhance, ImageFilter
+from app.utils.hashing import sha256_bytes
 
 class ImageService:
     @staticmethod
     def calculate_hash(image_bytes: bytes) -> str:
         """Calculate SHA256 hash of image bytes to detect duplicates."""
-        return hashlib.sha256(image_bytes).hexdigest()
+        return sha256_bytes(image_bytes)
 
     @staticmethod
     def preprocess_image(image_bytes: bytes, max_width: int = 1024) -> bytes:

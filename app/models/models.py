@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, DateTime, Integer, String, Text
 from app.db.database import Base
 from datetime import datetime, timezone
 
@@ -29,4 +29,29 @@ class OAuthToken(Base):
     __tablename__ = "oauth_tokens"
     id = Column(Integer, primary_key=True, index=True)
     encrypted_refresh_token = Column(String)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class PendingPreview(Base):
+    __tablename__ = "pending_previews"
+    id = Column(Integer, primary_key=True, index=True)
+    image_hash = Column(String, nullable=True, index=True)
+    payload_json = Column(Text)
+    source = Column(String, default="unknown")
+    status = Column(String, default="pending", index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class PreviewTaskCreation(Base):
+    __tablename__ = "preview_task_creations"
+    id = Column(Integer, primary_key=True, index=True)
+    preview_id = Column(Integer, index=True)
+    task_key = Column(String, unique=True, index=True)
+    google_task_id = Column(String, index=True)
+    list_name = Column(String)
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
