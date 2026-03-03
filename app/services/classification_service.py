@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.core.constants import LIST_NAMES
+
 
 COURSE_PREFIXES = {"SUPERIOR", "ELEMENTOS", "CA"}
 PROJECT_PREFIXES = {"JOKEM OS", "LA FENICE", "GYM TAMARINDO"}

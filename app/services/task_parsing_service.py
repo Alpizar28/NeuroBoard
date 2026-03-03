@@ -54,8 +54,6 @@ def build_preview_from_lines(
         if line.startswith("•"):
             if tasks:
                 tasks[-1].subtasks.append(line.lstrip("•").strip())
-            elif tasks == []:
-                continue
             continue
 
         task_text, due_text = _extract_due_text(line)

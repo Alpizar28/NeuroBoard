@@ -38,12 +38,13 @@ def parse_due_date(
     due_text: str | None,
     *,
     base_date: date | None = None,
-    timezone_name: str = "America/Costa_Rica",
+    timezone_name: str | None = None,
 ) -> date | None:
     if not due_text:
         return None
 
-    tz = ZoneInfo(timezone_name)
+    from app.core.config import settings
+    tz = ZoneInfo(timezone_name if timezone_name is not None else settings.DEFAULT_TIMEZONE)
     reference_date = base_date or datetime.now(tz).date()
     normalized = due_text.strip().lower()
 

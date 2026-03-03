@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from typing import Any
 
@@ -109,6 +110,16 @@ def extract_photo_file_id(message: dict[str, Any] | None) -> str | None:
     return largest.get("file_id")
 
 
+def extract_voice_file_id(message: dict[str, Any] | None) -> str | None:
+    """Extract the file_id from a voice message or audio attachment."""
+    if not message:
+        return None
+    voice = message.get("voice") or message.get("audio")
+    if not voice:
+        return None
+    return voice.get("file_id") or None
+
+
 def extract_caption_lines(message: dict[str, Any] | None) -> list[str]:
     if not message:
         return []
@@ -164,23 +175,22 @@ def parse_edit_command(message_text: str) -> tuple[int, list[str]] | None:
 
 
 class TelegramBotService:
-    """Small wrapper around the Telegram Bot API for file downloads."""
+    """Small wrapper around the Telegram Bot API for file downloads and message dispatch."""
 
     def __init__(
         self,
         bot_token: str,
         *,
-        timeout_seconds: float = 8.0,
+        timeout_seconds: float | None = None,
     ) -> None:
+        if not bot_token:
+            raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured.")
         self.bot_token = bot_token
-        self.timeout_seconds = timeout_seconds
+        self.timeout_seconds = timeout_seconds if timeout_seconds is not None else settings.HTTP_TIMEOUT_SECONDS
         self.api_base = f"https://api.telegram.org/bot{bot_token}"
         self.file_base = f"https://api.telegram.org/file/bot{bot_token}"
 
     async def get_file_path(self, file_id: str) -> str:
-        if not self.bot_token:
-            raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured.")
-
         async def _request_file_path() -> dict[str, Any]:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.get(
@@ -205,9 +215,6 @@ class TelegramBotService:
         return file_path
 
     async def download_file_bytes(self, file_path: str) -> bytes:
-        if not self.bot_token:
-            raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured.")
-
         async def _request_download() -> bytes:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.get(f"{self.file_base}/{file_path}")
@@ -221,9 +228,6 @@ class TelegramBotService:
         )
 
     async def execute_api_call(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if not self.bot_token:
-            raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured.")
-
         method = payload.get("method")
         if not isinstance(method, str) or not method:
             raise RuntimeError("Telegram API payload is missing method.")
@@ -246,10 +250,14 @@ class TelegramBotService:
         )
 
     async def execute_api_calls(self, payloads: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        results: list[dict[str, Any]] = []
-        for payload in payloads:
-            results.append(await self.execute_api_call(payload))
-        return results
+        """Execute all API calls concurrently."""
+        if not payloads:
+            return []
+        results = await asyncio.gather(
+            *(self.execute_api_call(p) for p in payloads),
+            return_exceptions=False,
+        )
+        return list(results)
 
 
 def build_telegram_bot_service() -> TelegramBotService:
@@ -260,7 +268,10 @@ def parse_preview_callback(callback_data: str | None) -> tuple[str, int] | None:
     if not callback_data:
         return None
 
-    prefix, action, raw_id = callback_data.split(":", 2) if callback_data.count(":") == 2 else ("", "", "")
+    parts = callback_data.split(":", 2)
+    if len(parts) != 3:
+        return None
+    prefix, action, raw_id = parts
     if prefix != "preview" or action not in {"confirm", "edit", "cancel"}:
         return None
 

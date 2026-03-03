@@ -1,6 +1,8 @@
 import io
 from PIL import Image, ImageEnhance, ImageFilter
+from app.core.config import settings
 from app.utils.hashing import sha256_bytes
+
 
 class ImageService:
     @staticmethod
@@ -9,30 +11,33 @@ class ImageService:
         return sha256_bytes(image_bytes)
 
     @staticmethod
-    def preprocess_image(image_bytes: bytes, max_width: int = 1024) -> bytes:
+    def preprocess_image(image_bytes: bytes, max_width: int | None = None) -> bytes:
         """
-        Resize to fixed width, apply contrast enhancement and noise reduction.
-        Returns preprocessed image as bytes.
+        Resize to max_width, apply contrast enhancement and noise reduction.
+        Converts all PIL modes to RGB for consistent JPEG output.
+        Returns preprocessed image as JPEG bytes.
         """
+        _max_width = max_width if max_width is not None else settings.IMAGE_MAX_WIDTH
+
         img = Image.open(io.BytesIO(image_bytes))
 
-        # Convert to RGB (in case of PNG with alpha)
-        if img.mode in ("RGBA", "P"):
+        # Convert any non-RGB mode to RGB (covers RGBA, P, L, LA, CMYK, I, F, etc.)
+        if img.mode != "RGB":
             img = img.convert("RGB")
 
-        # Resize to fixed width
-        if img.width > max_width:
-            ratio = max_width / float(img.width)
+        # Resize down to fixed width (never upscale)
+        if img.width > _max_width:
+            ratio = _max_width / float(img.width)
             new_height = int(float(img.height) * float(ratio))
-            img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
-            
+            img = img.resize((_max_width, new_height), Image.Resampling.LANCZOS)
+
         # Contrast enhancement
         enhancer = ImageEnhance.Contrast(img)
-        img = enhancer.enhance(2.0)
+        img = enhancer.enhance(settings.IMAGE_CONTRAST_FACTOR)
 
         # Noise reduction using a gentle filter
         img = img.filter(ImageFilter.SMOOTH_MORE)
-        
+
         # Save to bytes
         output = io.BytesIO()
         img.save(output, format="JPEG", quality=85)

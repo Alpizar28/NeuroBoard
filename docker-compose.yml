@@ -1,22 +1,35 @@
+# docker-compose.yml — LOCAL DEVELOPMENT ONLY
+# Coolify deploys directly from the Dockerfile; it does not use this file.
+# For local dev: docker compose up --build
+
 version: '3.8'
 
 services:
   api:
     build: .
-    restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
+      # Mount source code for live reload during local dev
       - .:/app
+      # Persist Whisper model cache so it is not re-downloaded on every restart
+      - whisper_models:/root/.cache/huggingface
+      # Persist the SQLite database across restarts
+      - db_data:/app/data
     environment:
       - DATABASE_URL=sqlite:////app/data/neuroboard.db
     env_file:
       - .env
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
-    mem_limit: 400m
-    cpus: 1.0
+      start_period: 30s
+    mem_limit: 900m
+    cpus: 1.5
+
+volumes:
+  whisper_models:
+  db_data:

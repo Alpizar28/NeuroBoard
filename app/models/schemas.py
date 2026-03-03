@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ParsedTask(BaseModel):
@@ -22,6 +22,8 @@ class PreviewResponse(BaseModel):
     status: str
     tasks: list[ParsedTask] = Field(default_factory=list)
     duplicate: bool = False
+    media_hash: str | None = None
+    # Kept for backwards compatibility
     image_hash: str | None = None
     preview_id: int | None = None
     action: str | None = None
@@ -35,6 +37,8 @@ class PreviewAdminItem(BaseModel):
     id: int
     status: str
     source: str
+    media_hash: str | None = None
+    # Kept for backwards compatibility
     image_hash: str | None = None
     task_count: int
     created_at: str
@@ -52,6 +56,17 @@ class PreviewAdminListResponse(BaseModel):
 
 
 class TelegramWebhookPayload(BaseModel):
+    """Production webhook payload — no test fields allowed."""
+    model_config = ConfigDict(extra="ignore")
+
+    update_id: int | None = None
+    message: dict[str, Any] | None = None
+    callback_query: dict[str, Any] | None = None
+
+
+class TelegramWebhookTestPayload(BaseModel):
+    """Test-only payload that bypasses image download via mock_lines.
+    Used by the /webhook/test endpoint which is disabled in production."""
     update_id: int | None = None
     message: dict[str, Any] | None = None
     callback_query: dict[str, Any] | None = None

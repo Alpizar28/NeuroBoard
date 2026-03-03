@@ -7,21 +7,22 @@ import httpx
 from pydantic import ValidationError
 
 from app.core.config import settings
+from app.core.constants import LIST_NAMES
 from app.models.schemas import ParsedTask, VisionExtractionPayload
 from app.services.classification_service import classify_task
 from app.services.date_parser_service import parse_due_date
 from app.utils.retry import async_retry
 
 
-ALLOWED_LIST_NAMES = {"Proyectos", "Jokem", "Personales", "Domesticas"}
+ALLOWED_LIST_NAMES = LIST_NAMES
 
 
 class VisionService:
     """Thin async client wrapper for a remote vision endpoint."""
 
-    def __init__(self, endpoint: str, timeout_seconds: float = 8.0) -> None:
+    def __init__(self, endpoint: str, timeout_seconds: float | None = None) -> None:
         self.endpoint = endpoint
-        self.timeout_seconds = timeout_seconds
+        self.timeout_seconds = timeout_seconds if timeout_seconds is not None else settings.HTTP_TIMEOUT_SECONDS
 
     async def extract_tasks(self, image_bytes: bytes) -> dict[str, Any]:
         if not self.endpoint:

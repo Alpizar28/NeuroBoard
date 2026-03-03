@@ -1,16 +1,24 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 
 from app.core.config import settings
+from app.core.constants import LIST_NAMES
 from app.models.schemas import ParsedTask
 from app.utils.retry import async_retry
 
 
 class GoogleTasksService:
-    """Small client placeholder for future Google Tasks integration."""
+    """Async client for the Google Tasks API v1 with OAuth2 refresh support.
+
+    The access_token is refreshed automatically on 401 responses.
+    After each refresh the new token is persisted to the database via
+    the optional `_persist_token` callback so subsequent requests in
+    other worker processes can reuse it without hitting the token endpoint.
+    """
 
     def __init__(
         self,
@@ -19,19 +27,20 @@ class GoogleTasksService:
         refresh_token: str = "",
         client_id: str = "",
         client_secret: str = "",
-        token_url: str = "https://oauth2.googleapis.com/token",
-        timeout_seconds: float = 8.0,
-        retry_attempts: int = 3,
-        retry_backoff_seconds: float = 0.25,
+        token_url: str | None = None,
+        timeout_seconds: float | None = None,
+        retry_attempts: int | None = None,
+        retry_backoff_seconds: float | None = None,
     ) -> None:
         self.access_token = access_token
         self.refresh_token = refresh_token
         self.client_id = client_id
         self.client_secret = client_secret
-        self.token_url = token_url
-        self.timeout_seconds = timeout_seconds
-        self.retry_attempts = retry_attempts
-        self.retry_backoff_seconds = retry_backoff_seconds
+        # Use settings as single source of truth; constructor args override for tests
+        self.token_url = token_url if token_url is not None else settings.GOOGLE_OAUTH_TOKEN_URL
+        self.timeout_seconds = timeout_seconds if timeout_seconds is not None else settings.HTTP_TIMEOUT_SECONDS
+        self.retry_attempts = retry_attempts if retry_attempts is not None else settings.HTTP_RETRY_ATTEMPTS
+        self.retry_backoff_seconds = retry_backoff_seconds if retry_backoff_seconds is not None else settings.HTTP_RETRY_BACKOFF_SECONDS
 
     def _has_refresh_credentials(self) -> bool:
         return bool(
@@ -41,11 +50,12 @@ class GoogleTasksService:
             and self.token_url
         )
 
-    async def _refresh_access_token(self) -> str:
+    async def _refresh_access_token(self, db=None) -> str:
+        """Refresh the OAuth access token and optionally persist it to the DB."""
         if not self._has_refresh_credentials():
             raise RuntimeError("Google OAuth refresh credentials are not configured.")
 
-        async def _request_refresh() -> str:
+        async def _request_refresh() -> dict[str, Any]:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.post(
                     self.token_url,
@@ -57,20 +67,25 @@ class GoogleTasksService:
                     },
                 )
                 response.raise_for_status()
-                payload = response.json()
+                return response.json()
 
-            refreshed_token = payload.get("access_token")
-            if not refreshed_token:
-                raise RuntimeError("Google OAuth token refresh did not return access_token.")
-
-            self.access_token = refreshed_token
-            return refreshed_token
-
-        return await async_retry(
+        payload = await async_retry(
             _request_refresh,
             max_attempts=self.retry_attempts,
             backoff_seconds=self.retry_backoff_seconds,
         )
+
+        refreshed_token = payload.get("access_token")
+        if not refreshed_token:
+            raise RuntimeError("Google OAuth token refresh did not return access_token.")
+
+        self.access_token = refreshed_token
+
+        # Persist to DB so subsequent requests reuse the token
+        if db is not None:
+            _persist_oauth_token(db, access_token=refreshed_token, expires_in=payload.get("expires_in"))
+
+        return refreshed_token
 
     async def create_task(
         self,
@@ -78,9 +93,10 @@ class GoogleTasksService:
         *,
         tasklist: str = "@default",
         parent: str | None = None,
+        db=None,
     ) -> dict[str, Any]:
         if not self.access_token and self._has_refresh_credentials():
-            await self._refresh_access_token()
+            await self._refresh_access_token(db=db)
 
         if not self.access_token:
             raise RuntimeError("Google Tasks access token is not configured.")
@@ -109,7 +125,7 @@ class GoogleTasksService:
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code != 401 or not self._has_refresh_credentials():
                 raise
-            await self._refresh_access_token()
+            await self._refresh_access_token(db=db)
             return await async_retry(
                 _request_create,
                 max_attempts=self.retry_attempts,
@@ -117,15 +133,65 @@ class GoogleTasksService:
             )
 
 
-def build_google_tasks_service() -> GoogleTasksService:
+def _persist_oauth_token(db, *, access_token: str, expires_in: int | None) -> None:
+    """Save the refreshed access token to the oauth_tokens table."""
+    from app.models.models import OAuthToken
+
+    expires_at: datetime | None = None
+    if expires_in:
+        expires_at = datetime.now(timezone.utc).replace(microsecond=0)
+        from datetime import timedelta
+        expires_at = expires_at + timedelta(seconds=int(expires_in) - 60)  # 60s safety margin
+
+    existing = (
+        db.query(OAuthToken)
+        .filter(OAuthToken.provider == "google")
+        .first()
+    )
+    if existing:
+        existing.access_token = access_token
+        existing.expires_at = expires_at
+        existing.timestamp = datetime.now(timezone.utc)
+        db.add(existing)
+    else:
+        record = OAuthToken(
+            provider="google",
+            access_token=access_token,
+            expires_at=expires_at,
+        )
+        db.add(record)
+    db.commit()
+
+
+def load_cached_access_token(db) -> str | None:
+    """Load a non-expired access token from the DB cache, if available."""
+    from app.models.models import OAuthToken
+
+    record = (
+        db.query(OAuthToken)
+        .filter(OAuthToken.provider == "google")
+        .first()
+    )
+    if not record or not record.access_token:
+        return None
+    if record.expires_at and record.expires_at < datetime.now(timezone.utc):
+        return None
+    return record.access_token
+
+
+def build_google_tasks_service(db=None) -> GoogleTasksService:
+    # Try to use a cached (non-expired) access token from the DB
+    access_token = settings.GOOGLE_TASKS_ACCESS_TOKEN
+    if db is not None:
+        cached = load_cached_access_token(db)
+        if cached:
+            access_token = cached
+
     return GoogleTasksService(
-        settings.GOOGLE_TASKS_ACCESS_TOKEN,
+        access_token,
         refresh_token=settings.GOOGLE_TASKS_REFRESH_TOKEN,
         client_id=settings.GOOGLE_OAUTH_CLIENT_ID,
         client_secret=settings.GOOGLE_OAUTH_CLIENT_SECRET,
-        token_url=settings.GOOGLE_OAUTH_TOKEN_URL,
-        retry_attempts=settings.HTTP_RETRY_ATTEMPTS,
-        retry_backoff_seconds=settings.HTTP_RETRY_BACKOFF_SECONDS,
     )
 
 

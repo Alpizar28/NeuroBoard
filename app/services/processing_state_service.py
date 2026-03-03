@@ -5,21 +5,33 @@ from sqlalchemy.orm import Session
 from app.models.models import ImageProcessed, Log
 
 
-def is_duplicate_image(db: Session, image_hash: str) -> bool:
+def is_duplicate_media(db: Session, media_hash: str) -> bool:
+    """Check if a media hash (image or audio) has been processed before."""
     return (
         db.query(ImageProcessed)
-        .filter(ImageProcessed.hash == image_hash)
+        .filter(ImageProcessed.hash == media_hash)
         .first()
         is not None
     )
 
 
-def record_processed_image(db: Session, image_hash: str) -> ImageProcessed:
-    record = ImageProcessed(hash=image_hash)
+# Kept for backward compatibility
+def is_duplicate_image(db: Session, image_hash: str) -> bool:
+    return is_duplicate_media(db, image_hash)
+
+
+def record_processed_media(db: Session, media_hash: str, media_type: str = "image") -> ImageProcessed:
+    """Record a processed media hash so future duplicates are detected."""
+    record = ImageProcessed(hash=media_hash, media_type=media_type)
     db.add(record)
     db.commit()
     db.refresh(record)
     return record
+
+
+# Kept for backward compatibility
+def record_processed_image(db: Session, image_hash: str) -> ImageProcessed:
+    return record_processed_media(db, image_hash, media_type="image")
 
 
 def record_log(

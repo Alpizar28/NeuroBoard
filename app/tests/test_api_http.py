@@ -56,11 +56,13 @@ def test_admin_previews_returns_created_preview() -> None:
     client = _build_test_client()
     original_admin_token = settings.ADMIN_API_TOKEN
     original_secret_token = settings.TELEGRAM_SECRET_TOKEN
+    original_enable_test = settings.ENABLE_TEST_ENDPOINT
     settings.ADMIN_API_TOKEN = "secret-admin"
     settings.TELEGRAM_SECRET_TOKEN = "telegram-secret"
+    settings.ENABLE_TEST_ENDPOINT = True
     try:
         webhook_response = client.post(
-            "/api/telegram/webhook",
+            "/api/telegram/webhook/test",
             headers={"X-Telegram-Bot-Api-Secret-Token": "telegram-secret"},
             json={"mock_lines": ["-Lavar ropa", "-JP: Rutina gym mañana"]},
         )
@@ -71,6 +73,7 @@ def test_admin_previews_returns_created_preview() -> None:
     finally:
         settings.ADMIN_API_TOKEN = original_admin_token
         settings.TELEGRAM_SECRET_TOKEN = original_secret_token
+        settings.ENABLE_TEST_ENDPOINT = original_enable_test
         app.dependency_overrides.clear()
 
     assert webhook_response.status_code == 200
@@ -86,11 +89,13 @@ def test_admin_previews_filters_by_status() -> None:
     client = _build_test_client()
     original_admin_token = settings.ADMIN_API_TOKEN
     original_secret_token = settings.TELEGRAM_SECRET_TOKEN
+    original_enable_test = settings.ENABLE_TEST_ENDPOINT
     settings.ADMIN_API_TOKEN = "secret-admin"
     settings.TELEGRAM_SECRET_TOKEN = "telegram-secret"
+    settings.ENABLE_TEST_ENDPOINT = True
     try:
         client.post(
-            "/api/telegram/webhook",
+            "/api/telegram/webhook/test",
             headers={"X-Telegram-Bot-Api-Secret-Token": "telegram-secret"},
             json={"mock_lines": ["-Lavar ropa"]},
         )
@@ -101,9 +106,31 @@ def test_admin_previews_filters_by_status() -> None:
     finally:
         settings.ADMIN_API_TOKEN = original_admin_token
         settings.TELEGRAM_SECRET_TOKEN = original_secret_token
+        settings.ENABLE_TEST_ENDPOINT = original_enable_test
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["status_filter"] == "completed"
     assert payload["total"] == 0
+
+
+def test_webhook_test_endpoint_disabled_by_default() -> None:
+    """The /webhook/test endpoint must return 404 unless ENABLE_TEST_ENDPOINT=True."""
+    client = _build_test_client()
+    original_enable_test = settings.ENABLE_TEST_ENDPOINT
+    original_secret_token = settings.TELEGRAM_SECRET_TOKEN
+    settings.ENABLE_TEST_ENDPOINT = False
+    settings.TELEGRAM_SECRET_TOKEN = "telegram-secret"
+    try:
+        response = client.post(
+            "/api/telegram/webhook/test",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "telegram-secret"},
+            json={"mock_lines": ["-Lavar ropa"]},
+        )
+    finally:
+        settings.ENABLE_TEST_ENDPOINT = original_enable_test
+        settings.TELEGRAM_SECRET_TOKEN = original_secret_token
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
